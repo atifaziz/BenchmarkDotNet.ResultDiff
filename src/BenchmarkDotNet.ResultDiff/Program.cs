@@ -8,20 +8,25 @@ using CsvHelper;
 
 // Reads BenchmarkDotNet CSV format results from two directories and creates a rudimentary diff view.
 
-if (args.Length < 2)
-{
-    Console.Error.WriteLine("syntax: <old result path> <new result path> [target dir to save files to]");
-    return;
-}
+DirectoryInfo oldDir, newDir;
+string targetDir;
 
-var targetDir = Directory.GetCurrentDirectory();
-if (args.Length == 3)
+switch (args)
 {
-    targetDir = args[2];
+    case [var oldDirArg, var newDirArg]:
+        oldDir = FindDirectory(oldDirArg);
+        newDir = FindDirectory(newDirArg);
+        targetDir = Directory.GetCurrentDirectory();
+        break;
+    case [var oldDirArg, var newDirArg, var targetDirArg]:
+        oldDir = FindDirectory(oldDirArg);
+        newDir = FindDirectory(newDirArg);
+        targetDir = targetDirArg;
+        break;
+    default:
+        Console.Error.WriteLine("syntax: <old result path> <new result path> [target dir to save files to]");
+        return 1;
 }
-
-var oldDir = FindDirectory(args[0]);
-var newDir = FindDirectory(args[1]);
 
 var pairs = CreateFilePairs(oldDir, newDir);
 
@@ -74,7 +79,7 @@ foreach (var (oldFile, newFile) in pairs)
         foreach (var effectiveHeader in effectiveHeaders)
         {
             writer.Write("|-------");
-            if (effectiveHeader.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || effectiveHeader == "Allocated" || effectiveHeader == "Mean")
+            if (effectiveHeader.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || effectiveHeader is "Allocated" or "Mean")
             {
                 writer.Write(":");
             }
@@ -125,13 +130,9 @@ foreach (var (oldFile, newFile) in pairs)
 
                         if (string.IsNullOrWhiteSpace(oldResult.Unit) == string.IsNullOrWhiteSpace(newResult.Unit))
                         {
-                            var canCalculateDiff = effectiveHeader != "Error"
-                                                   && oldResult.Value != "-"
-                                                   && newResult.Value != "-"
-                                                   && oldResult.Value != "N/A"
-                                                   && newResult.Value != "N/A"
-                                                   && oldResult.Value != "NA"
-                                                   && newResult.Value != "NA"
+                            var canCalculateDiff = effectiveHeader is not "Error"
+                                                   && oldResult.Value is not "-" and not "N/A" and not "NA"
+                                                   && newResult.Value is not "-" and not "N/A" and not "NA"
                                                    && decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0;
 
                             decimal newMultiplier = 1;
@@ -139,35 +140,31 @@ foreach (var (oldFile, newFile) in pairs)
 
                             if (canCalculateDiff && oldResult.Unit.Length > 0)
                             {
-                                var oldUnit = oldResult.Unit;
-                                var newUnit = newResult.Unit;
-                                if (oldUnit == newUnit)
+                                switch (oldResult.Unit, newResult.Unit)
                                 {
-                                    // ok
-                                }
-                                else if (oldUnit == "MB" && newUnit == "KB"
-                                         || oldUnit == "KB" && newUnit == "B"
-                                         || oldUnit == "GB" && newUnit == "MB"
-                                         || oldUnit == "s" && newUnit == "ms"
-                                         || oldUnit == "ms" && newUnit == "us"
-                                         || oldUnit == "ms" && newUnit == "μs"
-                                         || oldUnit == "μs" && newUnit == "ns")
-                                {
-                                    newMultiplier = conversionFromBigger;
-                                }
-                                else if (oldUnit == "MB" && newUnit == "B")
-                                {
-                                    newMultiplier = conversionFromBigger * conversionFromBigger;
-                                }
-                                else if (oldUnit == "ms" && newUnit == "s"
-                                         || oldUnit == "μs" && newUnit == "ms"
-                                         || oldUnit == "KB" && newUnit == "MB")
-                                {
-                                    newMultiplier = 1 / conversionFromBigger;
-                                }
-                                else
-                                {
-                                    canCalculateDiff = false;
+                                    case var (oldUnit, newUnit) when oldUnit == newUnit:
+                                        // ok
+                                        break;
+                                    case ("MB", "KB"):
+                                    case ("KB", "B"):
+                                    case ("GB", "MB"):
+                                    case ("s" , "ms"):
+                                    case ("ms", "us"):
+                                    case ("ms", "μs"):
+                                    case ("μs", "ns"):
+                                        newMultiplier = conversionFromBigger;
+                                        break;
+                                    case ("MB", "B"):
+                                        newMultiplier = conversionFromBigger * conversionFromBigger;
+                                        break;
+                                    case ("ms", "s"):
+                                    case ("μs", "ms"):
+                                    case ("KB", "MB"):
+                                        newMultiplier = 1 / conversionFromBigger;
+                                        break;
+                                    default:
+                                        canCalculateDiff = false;
+                                        break;
                                 }
                             }
 
@@ -179,22 +176,18 @@ foreach (var (oldFile, newFile) in pairs)
                                 var diff = (newValue * newMultiplier / old - 1) * 100;
                                 value += $" ({diff:+#;-#;0}%)";
                             }
-                            else if (oldResult.Value == "-" || newResult.Value == "-")
-                            {
-                                // OK
-                            }
-                            else if (oldResult.Value == "0.0000" && newResult.Value == "0.0000")
+                            else if ((oldResult.Value, newResult.Value) is ("-", _) or (_, "-") or ("0.0000", "0.0000"))
                             {
                                 // OK
                             }
                             else if (decimal.TryParse(oldResult.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out _)
-                                     && newResult.Value == "-")
+                                     && newResult.Value is "-")
                             {
                                 value += " (-100%)";
                             }
                             else
                             {
-                                if (effectiveHeader != "Error" && oldString != value)
+                                if (effectiveHeader is not "Error" && oldString != value)
                                 {
                                     Console.Error.WriteLine("Cannot calculate diff for " + oldString + " vs " + value);
                                 }
@@ -220,7 +213,7 @@ Console.WriteLine("Wrote results to " + targetFile);
 
 Process.Start("notepad", targetFile);
 
-return;
+return 0;
 
 static (string Value, string Unit) SplitResult(string result) =>
     result.LastIndexOf(' ') is var idx and >= 0
@@ -241,10 +234,9 @@ static List<(FileInfo OldFile, FileInfo NewFile)> CreateFilePairs(DirectoryInfo 
         else
         {
             // check if new file name format without namespace
-            var tokens = fileName.Split('.');
-            if (tokens.Length > 1)
+            if (fileName.Split('.') is [.., var token1, var token2])
             {
-                fileName = tokens[^2] + "." + tokens[^1];
+                fileName = token1 + "." + token2;
                 newReportFile = new FileInfo(Path.Combine(newDir.FullName, fileName));
                 if (newReportFile.Exists)
                 {
@@ -265,10 +257,9 @@ static DirectoryInfo FindDirectory(string path)
         Console.Error.WriteLine("directory does not exist: " + path);
     }
 
-    if (dir.GetFiles("*.csv").Length == 0)
+    if (dir.GetFiles("*.csv") is [])
     {
-        var resultsDirectory = dir.GetDirectories().FirstOrDefault(x => x.Name == "results");
-        if (resultsDirectory != null)
+        if (dir.GetDirectories().FirstOrDefault(x => x.Name is "results") is { } resultsDirectory)
         {
             dir = resultsDirectory;
         }
