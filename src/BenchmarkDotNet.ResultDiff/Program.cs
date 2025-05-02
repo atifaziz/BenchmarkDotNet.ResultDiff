@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -133,7 +133,7 @@ foreach (var (oldFile, newFile) in pairs)
                                                     && (decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0);
 
                             decimal newMultiplier = 1;
-                            const decimal ConversionFromBigger = 0.0009765625M;
+                            const decimal conversionFromBigger = 0.0009765625M;
 
                             if (canCalculateDiff && oldResult.Unit.Length > 0)
                             {
@@ -151,17 +151,17 @@ foreach (var (oldFile, newFile) in pairs)
                                          || oldUnit == "ms" && newUnit == "μs"
                                          || oldUnit == "μs" && newUnit == "ns")
                                 {
-                                    newMultiplier = ConversionFromBigger;
+                                    newMultiplier = conversionFromBigger;
                                 }
                                 else if (oldUnit == "MB" && newUnit == "B")
                                 {
-                                    newMultiplier = ConversionFromBigger * ConversionFromBigger;
+                                    newMultiplier = conversionFromBigger * conversionFromBigger;
                                 }
                                 else if (oldUnit == "ms" && newUnit == "s"
                                          || oldUnit == "μs" && newUnit == "ms"
                                          || oldUnit == "KB" && newUnit == "MB")
                                 {
-                                    newMultiplier = 1 / ConversionFromBigger;
+                                    newMultiplier = 1 / conversionFromBigger;
                                 }
                                 else
                                 {
