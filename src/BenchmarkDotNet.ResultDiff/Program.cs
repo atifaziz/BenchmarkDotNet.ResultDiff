@@ -28,8 +28,6 @@ switch (args)
         return 1;
 }
 
-var pairs = CreateFilePairs(oldDir, newDir);
-
 var columns = new List<string>
 {
     "Type",
@@ -53,7 +51,7 @@ var newDirName = newDir.Name != oldDir.Name ? newDir.Name : newDir.Parent.Name;
 var targetFile = Path.Combine(targetDir, oldDirName + "_vs_" + newDirName + "-github.md");
 using var writer = new StreamWriter(targetFile);
 
-foreach (var (oldFile, newFile) in pairs)
+foreach (var (oldFile, newFile) in CreateFilePairs(oldDir, newDir))
 {
     writer.WriteLine("## " + oldFile.Name.Replace("-report.csv", "", StringComparison.Ordinal));
     writer.WriteLine();
@@ -217,16 +215,15 @@ static (string Value, string Unit) SplitResult(string result) =>
         ? (result[..idx], result[(idx + 1)..])
         : (result, "");
 
-static List<(FileInfo OldFile, FileInfo NewFile)> CreateFilePairs(DirectoryInfo oldDir, DirectoryInfo newDir)
+static IEnumerable<(FileInfo OldFile, FileInfo NewFile)> CreateFilePairs(DirectoryInfo oldDir, DirectoryInfo newDir)
 {
-    var pairs = new List<(FileInfo OldFile, FileInfo NewFile)>();
     foreach (var oldReportFile in oldDir.GetFiles("*-report.csv"))
     {
         var fileName = oldReportFile.Name;
         var newReportFile = new FileInfo(Path.Combine(newDir.FullName, fileName));
         if (newReportFile.Exists)
         {
-            pairs.Add((oldReportFile, newReportFile));
+            yield return (oldReportFile, newReportFile);
         }
         else
         {
@@ -237,13 +234,11 @@ static List<(FileInfo OldFile, FileInfo NewFile)> CreateFilePairs(DirectoryInfo 
                 newReportFile = new FileInfo(Path.Combine(newDir.FullName, fileName));
                 if (newReportFile.Exists)
                 {
-                    pairs.Add((oldReportFile, newReportFile));
+                    yield return (oldReportFile, newReportFile);
                 }
             }
         }
     }
-
-    return pairs;
 }
 
 static DirectoryInfo FindDirectory(string path)
