@@ -222,16 +222,10 @@ Process.Start("notepad", targetFile);
 
 return;
 
-static (string Value, string Unit) SplitResult(string result)
-{
-    var idx = result.LastIndexOf(' ');
-    if (idx != -1)
-    {
-        return (result[..idx], result[(idx + 1)..]);
-    }
-
-    return (result, "");
-}
+static (string Value, string Unit) SplitResult(string result) =>
+    result.LastIndexOf(' ') is var idx and >= 0
+        ? (result[..idx], result[(idx + 1)..])
+        : (result, "");
 
 static List<(FileInfo OldFile, FileInfo NewFile)> CreateFilePairs(DirectoryInfo oldDir, DirectoryInfo newDir)
 {
