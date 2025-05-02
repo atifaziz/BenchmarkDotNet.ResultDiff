@@ -50,7 +50,7 @@ using var writer = new StreamWriter(targetFile);
 
 foreach (var (oldFile, newFile) in pairs)
 {
-    writer.WriteLine("## " + oldFile.Name.Replace("-report.csv", ""));
+    writer.WriteLine("## " + oldFile.Name.Replace("-report.csv", "", StringComparison.Ordinal));
     writer.WriteLine();
 
     Console.WriteLine("Analyzing pair " + oldFile.Name);
@@ -58,11 +58,11 @@ foreach (var (oldFile, newFile) in pairs)
     using (var oldReader = new CsvReader(new StreamReader(oldFile.FullName), CultureInfo.InvariantCulture))
     using (var newReader = new CsvReader(new StreamReader(newFile.FullName), CultureInfo.InvariantCulture))
     {
-        oldReader.Read();
-        newReader.Read();
+        _ = oldReader.Read();
+        _ = newReader.Read();
 
-        oldReader.ReadHeader();
-        newReader.ReadHeader();
+        _ = oldReader.ReadHeader();
+        _ = newReader.ReadHeader();
 
         var effectiveHeaders = columns
             .Where(x => oldReader.TryGetField(x, out string _) || newReader.TryGetField(x, out string _))
@@ -89,7 +89,7 @@ foreach (var (oldFile, newFile) in pairs)
             writer.Write("| Old |");
             foreach (var effectiveHeader in effectiveHeaders)
             {
-                string value = "-";
+                var value = "-";
                 if (oldReader.TryGetField(effectiveHeader, out string temp))
                 {
                     value = temp;
@@ -104,13 +104,13 @@ foreach (var (oldFile, newFile) in pairs)
             writer.Write("| **New** |");
             foreach (var effectiveHeader in effectiveHeaders)
             {
-                if (effectiveHeader == "Type" || effectiveHeader == "Method" || effectiveHeader == "N" || effectiveHeader == "FileName")
+                if (effectiveHeader is "Type" or "Method" or "N" or "FileName")
                 {
                     writer.Write("\t|");
                 }
                 else
                 {
-                    string value = "-";
+                    var value = "-";
                     if (newReader.TryGetField(effectiveHeader, out string temp))
                     {
                         value = temp;
@@ -118,19 +118,21 @@ foreach (var (oldFile, newFile) in pairs)
 
                     if (oldColumnValues.TryGetValue(effectiveHeader, out var oldString))
                     {
+#pragma warning disable IDE0042 // Deconstruct variable declaration
                         var oldResult = SplitResult(oldString);
                         var newResult = SplitResult(value);
+#pragma warning restore IDE0042 // Deconstruct variable declaration
 
                         if (string.IsNullOrWhiteSpace(oldResult.Unit) == string.IsNullOrWhiteSpace(newResult.Unit))
                         {
-                            bool canCalculateDiff = effectiveHeader != "Error"
-                                                    && oldResult.Value != "-"
-                                                    && newResult.Value != "-"
-                                                    && oldResult.Value != "N/A"
-                                                    && newResult.Value != "N/A"
-                                                    && oldResult.Value != "NA"
-                                                    && newResult.Value != "NA"
-                                                    && (decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0);
+                            var canCalculateDiff = effectiveHeader != "Error"
+                                                   && oldResult.Value != "-"
+                                                   && newResult.Value != "-"
+                                                   && oldResult.Value != "N/A"
+                                                   && newResult.Value != "N/A"
+                                                   && oldResult.Value != "NA"
+                                                   && newResult.Value != "NA"
+                                                   && decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0;
 
                             decimal newMultiplier = 1;
                             const decimal conversionFromBigger = 0.0009765625M;
@@ -174,7 +176,7 @@ foreach (var (oldFile, newFile) in pairs)
                                 var old = decimal.Parse(oldResult.Value, CultureInfo.InvariantCulture);
                                 var newValue = decimal.Parse(newResult.Value, CultureInfo.InvariantCulture);
 
-                                var diff = ((newValue * newMultiplier) / old - 1) * 100;
+                                var diff = (newValue * newMultiplier / old - 1) * 100;
                                 value += $" ({diff:+#;-#;0}%)";
                             }
                             else if (oldResult.Value == "-" || newResult.Value == "-")
@@ -222,10 +224,10 @@ return;
 
 static (string Value, string Unit) SplitResult(string result)
 {
-    int idx = result.LastIndexOf(' ');
+    var idx = result.LastIndexOf(' ');
     if (idx != -1)
     {
-        return (result.Substring(0, idx), result.Substring(idx + 1));
+        return (result[..idx], result[(idx + 1)..]);
     }
 
     return (result, "");
@@ -248,7 +250,7 @@ static List<(FileInfo OldFile, FileInfo NewFile)> CreateFilePairs(DirectoryInfo 
             var tokens = fileName.Split('.');
             if (tokens.Length > 1)
             {
-                fileName = tokens[tokens.Length - 2] + "." + tokens[tokens.Length - 1];
+                fileName = tokens[^2] + "." + tokens[^1];
                 newReportFile = new FileInfo(Path.Combine(newDir.FullName, fileName));
                 if (newReportFile.Exists)
                 {
