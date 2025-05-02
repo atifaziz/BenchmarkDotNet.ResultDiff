@@ -42,7 +42,7 @@ ImmutableArray<string> columns =
 
 var writer = Console.Out;
 
-foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pair, i) => (i, pair.OldFile, pair.NewFile)))
+foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
 {
     Console.Error.WriteLine("Analyzing pair " + oldFile.Name);
 
