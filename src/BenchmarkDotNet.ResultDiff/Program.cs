@@ -78,7 +78,7 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
             where c.Index is (not null, _) or (_, not null)
             select c);
 
-    writer.WriteLine("| Diff |" + string.Join("|", from h in effectiveHeaders select h.Name) + "|");
+    writer.WriteLine($"| Diff | {string.Join(" | ", from h in effectiveHeaders select h.Name)} |");
 
     writer.Write("|------- ");
     foreach (var (name, _) in effectiveHeaders)
@@ -106,7 +106,7 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
             var value = "-";
             if (oldIndex is { } someOldIndex)
                 oldColumnValues[hi] = value = oldRow[someOldIndex];
-            writer.Write(value + "|");
+            writer.Write($" {value} |");
         }
 
         writer.WriteLine();
@@ -116,7 +116,7 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
         {
             if (name is "Type" or "Method" or "N" or "FileName")
             {
-                writer.Write("\t|");
+                writer.Write(" |");
             }
             else
             {
