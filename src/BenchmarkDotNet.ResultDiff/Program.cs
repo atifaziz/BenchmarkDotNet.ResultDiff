@@ -211,8 +211,6 @@ writer.Close();
 
 Console.WriteLine("Wrote results to " + targetFile);
 
-Process.Start("notepad", targetFile);
-
 return 0;
 
 static (string Value, string Unit) SplitResult(string result) =>
