@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -9,22 +8,15 @@ using CsvHelper;
 // Reads BenchmarkDotNet CSV format results from two directories and creates a rudimentary diff view.
 
 DirectoryInfo oldDir, newDir;
-string targetDir;
 
 switch (args)
 {
     case [var oldDirArg, var newDirArg]:
         oldDir = FindDirectory(oldDirArg);
         newDir = FindDirectory(newDirArg);
-        targetDir = Directory.GetCurrentDirectory();
-        break;
-    case [var oldDirArg, var newDirArg, var targetDirArg]:
-        oldDir = FindDirectory(oldDirArg);
-        newDir = FindDirectory(newDirArg);
-        targetDir = targetDirArg;
         break;
     default:
-        Console.Error.WriteLine("syntax: <old result path> <new result path> [target dir to save files to]");
+        Console.Error.WriteLine("syntax: <old result path> <new result path>");
         return 1;
 }
 
@@ -46,17 +38,20 @@ var columns = new List<string>
     "Allocated"
 };
 
-var oldDirName = oldDir.Name != newDir.Name ? oldDir.Name : oldDir.Parent.Name;
-var newDirName = newDir.Name != oldDir.Name ? newDir.Name : newDir.Parent.Name;
-var targetFile = Path.Combine(targetDir, oldDirName + "_vs_" + newDirName + "-github.md");
-using var writer = new StreamWriter(targetFile);
+var writer = Console.Out;
 
-foreach (var (oldFile, newFile) in CreateFilePairs(oldDir, newDir))
+foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pair, i) => (i, pair.OldFile, pair.NewFile)))
 {
+    Console.Error.WriteLine("Analyzing pair " + oldFile.Name);
+
+    if (i > 0)
+    {
+        writer.WriteLine();
+        writer.WriteLine();
+    }
+
     writer.WriteLine("## " + oldFile.Name.Replace("-report.csv", "", StringComparison.Ordinal));
     writer.WriteLine();
-
-    Console.WriteLine("Analyzing pair " + oldFile.Name);
 
     using var oldReader = new CsvReader(new StreamReader(oldFile.FullName), CultureInfo.InvariantCulture);
     using var newReader = new CsvReader(new StreamReader(newFile.FullName), CultureInfo.InvariantCulture);
@@ -199,14 +194,7 @@ foreach (var (oldFile, newFile) in CreateFilePairs(oldDir, newDir))
 
         writer.WriteLine();
     }
-
-    writer.WriteLine();
-    writer.WriteLine();
 }
-
-writer.Close();
-
-Console.WriteLine("Wrote results to " + targetFile);
 
 return 0;
 
