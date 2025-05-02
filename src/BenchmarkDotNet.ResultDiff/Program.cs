@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using CsvHelper;
+using Dsv;
+using MoreLinq;
 
 // Reads BenchmarkDotNet CSV format results from two directories and creates a rudimentary diff view.
 
@@ -53,26 +55,36 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
     writer.WriteLine("## " + oldFile.Name.Replace("-report.csv", "", StringComparison.Ordinal));
     writer.WriteLine();
 
-    using var oldReader = new CsvReader(new StreamReader(oldFile.FullName), CultureInfo.InvariantCulture);
-    using var newReader = new CsvReader(new StreamReader(newFile.FullName), CultureInfo.InvariantCulture);
+    var oldRows = File.ReadLines(oldFile.FullName).ParseCsv();
+    var newRows = File.ReadLines(newFile.FullName).ParseCsv();
 
-    _ = oldReader.Read();
-    _ = newReader.Read();
+    using var rowPair = oldRows.Zip(newRows, (oldRow1, newRow1) => (Old: oldRow1, New: newRow1))
+                               .GetEnumerator();
 
-    _ = oldReader.ReadHeader();
-    _ = newReader.ReadHeader();
+    if (!rowPair.MoveNext())
+    {
+        Console.Error.WriteLine("Incomplete data in one of the two files.");
+        return 1;
+    }
 
-    var effectiveHeaders = columns
-        .Where(x => oldReader.TryGetField(x, out string _) || newReader.TryGetField(x, out string _))
-        .ToList();
+    var (oldRow, newRow) = rowPair.Current;
 
-    writer.WriteLine("| **Diff**|" + string.Join("|", effectiveHeaders) + "|");
+    var effectiveHeaders =
+        ImmutableArray.CreateRange(
+            from c in columns
+            select (Name: c, Index: (Old: oldRow.FindFirstIndex(c, StringComparison.Ordinal),
+                                     New: newRow.FindFirstIndex(c, StringComparison.Ordinal)))
+            into c
+            where c.Index is (not null, _) or (_, not null)
+            select c);
+
+    writer.WriteLine("| **Diff**|" + string.Join("|", from h in effectiveHeaders select h.Name) + "|");
 
     writer.Write("|------- ");
-    foreach (var effectiveHeader in effectiveHeaders)
+    foreach (var (name, _) in effectiveHeaders)
     {
         writer.Write("|-------");
-        if (effectiveHeader.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || effectiveHeader is "Allocated" or "Mean")
+        if (name.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || name is "Allocated" or "Mean")
         {
             writer.Write(":");
         }
@@ -80,41 +92,37 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
 
     writer.WriteLine("|");
 
-    while (oldReader.Read() && newReader.Read())
+    var oldColumnValues = new string?[effectiveHeaders.Length];
+
+    while (rowPair.MoveNext())
     {
-        var oldColumnValues = new Dictionary<string, string>();
+        Array.Clear(oldColumnValues);
+
+        (oldRow, newRow) = rowPair.Current;
 
         writer.Write("| Old |");
-        foreach (var effectiveHeader in effectiveHeaders)
+        foreach (var (hi, (_, (_, oldIndex))) in effectiveHeaders.Index())
         {
             var value = "-";
-            if (oldReader.TryGetField(effectiveHeader, out string temp))
-            {
-                value = temp;
-            }
-
-            oldColumnValues[effectiveHeader] = value;
+            if (oldIndex is { } someOldIndex)
+                oldColumnValues[hi] = value = oldRow[someOldIndex];
             writer.Write(value + "|");
         }
 
         writer.WriteLine();
 
         writer.Write("| **New** |");
-        foreach (var effectiveHeader in effectiveHeaders)
+        foreach (var (hi, (name, (_, newIndex))) in effectiveHeaders.Index())
         {
-            if (effectiveHeader is "Type" or "Method" or "N" or "FileName")
+            if (name is "Type" or "Method" or "N" or "FileName")
             {
                 writer.Write("\t|");
             }
             else
             {
-                var value = "-";
-                if (newReader.TryGetField(effectiveHeader, out string temp))
-                {
-                    value = temp;
-                }
+                var value = newIndex is { } someNewIndex ? newRow[someNewIndex] : "-";
 
-                if (oldColumnValues.TryGetValue(effectiveHeader, out var oldString))
+                if (oldColumnValues[hi] is { } oldString)
                 {
 #pragma warning disable IDE0042 // Deconstruct variable declaration
                     var oldResult = SplitResult(oldString);
@@ -123,7 +131,7 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
 
                     if (string.IsNullOrWhiteSpace(oldResult.Unit) == string.IsNullOrWhiteSpace(newResult.Unit))
                     {
-                        var canCalculateDiff = effectiveHeader is not "Error"
+                        var canCalculateDiff = name is not "Error"
                                                && oldResult.Value is not "-" and not "N/A" and not "NA"
                                                && newResult.Value is not "-" and not "N/A" and not "NA"
                                                && decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0;
@@ -180,7 +188,7 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
                         }
                         else
                         {
-                            if (effectiveHeader is not "Error" && oldString != value)
+                            if (name is not "Error" && oldString != value)
                             {
                                 Console.Error.WriteLine("Cannot calculate diff for " + oldString + " vs " + value);
                             }
