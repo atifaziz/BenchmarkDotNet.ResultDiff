@@ -22,8 +22,8 @@ switch (args)
         return 1;
 }
 
-var columns = new List<string>
-{
+ImmutableArray<string> columns =
+[
     "Type",
     "Method",
     "FileName",
@@ -38,7 +38,7 @@ var columns = new List<string>
     "Gen 1",
     "Gen 2",
     "Allocated"
-};
+];
 
 var writer = Console.Out;
 
