@@ -78,7 +78,7 @@ foreach (var (i, oldFile, newFile) in CreateFilePairs(oldDir, newDir).Select((pa
             where c.Index is (not null, _) or (_, not null)
             select c);
 
-    writer.WriteLine("| **Diff**|" + string.Join("|", from h in effectiveHeaders select h.Name) + "|");
+    writer.WriteLine("| Diff |" + string.Join("|", from h in effectiveHeaders select h.Name) + "|");
 
     writer.Write("|------- ");
     foreach (var (name, _) in effectiveHeaders)
