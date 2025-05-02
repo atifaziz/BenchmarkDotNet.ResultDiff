@@ -60,147 +60,146 @@ foreach (var (oldFile, newFile) in pairs)
 
     Console.WriteLine("Analyzing pair " + oldFile.Name);
 
-    using (var oldReader = new CsvReader(new StreamReader(oldFile.FullName), CultureInfo.InvariantCulture))
-    using (var newReader = new CsvReader(new StreamReader(newFile.FullName), CultureInfo.InvariantCulture))
+    using var oldReader = new CsvReader(new StreamReader(oldFile.FullName), CultureInfo.InvariantCulture);
+    using var newReader = new CsvReader(new StreamReader(newFile.FullName), CultureInfo.InvariantCulture);
+
+    _ = oldReader.Read();
+    _ = newReader.Read();
+
+    _ = oldReader.ReadHeader();
+    _ = newReader.ReadHeader();
+
+    var effectiveHeaders = columns
+        .Where(x => oldReader.TryGetField(x, out string _) || newReader.TryGetField(x, out string _))
+        .ToList();
+
+    writer.WriteLine("| **Diff**|" + string.Join("|", effectiveHeaders) + "|");
+
+    writer.Write("|------- ");
+    foreach (var effectiveHeader in effectiveHeaders)
     {
-        _ = oldReader.Read();
-        _ = newReader.Read();
+        writer.Write("|-------");
+        if (effectiveHeader.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || effectiveHeader is "Allocated" or "Mean")
+        {
+            writer.Write(":");
+        }
+    }
 
-        _ = oldReader.ReadHeader();
-        _ = newReader.ReadHeader();
+    writer.WriteLine("|");
 
-        var effectiveHeaders = columns
-            .Where(x => oldReader.TryGetField(x, out string _) || newReader.TryGetField(x, out string _))
-            .ToList();
+    while (oldReader.Read() && newReader.Read())
+    {
+        var oldColumnValues = new Dictionary<string, string>();
 
-        writer.WriteLine("| **Diff**|" + string.Join("|", effectiveHeaders) + "|");
-
-        writer.Write("|------- ");
+        writer.Write("| Old |");
         foreach (var effectiveHeader in effectiveHeaders)
         {
-            writer.Write("|-------");
-            if (effectiveHeader.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || effectiveHeader is "Allocated" or "Mean")
+            var value = "-";
+            if (oldReader.TryGetField(effectiveHeader, out string temp))
             {
-                writer.Write(":");
+                value = temp;
             }
+
+            oldColumnValues[effectiveHeader] = value;
+            writer.Write(value + "|");
         }
 
-        writer.WriteLine("|");
+        writer.WriteLine();
 
-        while (oldReader.Read() && newReader.Read())
+        writer.Write("| **New** |");
+        foreach (var effectiveHeader in effectiveHeaders)
         {
-            var oldColumnValues = new Dictionary<string, string>();
-
-            writer.Write("| Old |");
-            foreach (var effectiveHeader in effectiveHeaders)
+            if (effectiveHeader is "Type" or "Method" or "N" or "FileName")
+            {
+                writer.Write("\t|");
+            }
+            else
             {
                 var value = "-";
-                if (oldReader.TryGetField(effectiveHeader, out string temp))
+                if (newReader.TryGetField(effectiveHeader, out string temp))
                 {
                     value = temp;
                 }
 
-                oldColumnValues[effectiveHeader] = value;
-                writer.Write(value + "|");
-            }
-
-            writer.WriteLine();
-
-            writer.Write("| **New** |");
-            foreach (var effectiveHeader in effectiveHeaders)
-            {
-                if (effectiveHeader is "Type" or "Method" or "N" or "FileName")
+                if (oldColumnValues.TryGetValue(effectiveHeader, out var oldString))
                 {
-                    writer.Write("\t|");
-                }
-                else
-                {
-                    var value = "-";
-                    if (newReader.TryGetField(effectiveHeader, out string temp))
-                    {
-                        value = temp;
-                    }
-
-                    if (oldColumnValues.TryGetValue(effectiveHeader, out var oldString))
-                    {
 #pragma warning disable IDE0042 // Deconstruct variable declaration
-                        var oldResult = SplitResult(oldString);
-                        var newResult = SplitResult(value);
+                    var oldResult = SplitResult(oldString);
+                    var newResult = SplitResult(value);
 #pragma warning restore IDE0042 // Deconstruct variable declaration
 
-                        if (string.IsNullOrWhiteSpace(oldResult.Unit) == string.IsNullOrWhiteSpace(newResult.Unit))
+                    if (string.IsNullOrWhiteSpace(oldResult.Unit) == string.IsNullOrWhiteSpace(newResult.Unit))
+                    {
+                        var canCalculateDiff = effectiveHeader is not "Error"
+                                               && oldResult.Value is not "-" and not "N/A" and not "NA"
+                                               && newResult.Value is not "-" and not "N/A" and not "NA"
+                                               && decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0;
+
+                        decimal newMultiplier = 1;
+                        const decimal conversionFromBigger = 0.0009765625M;
+
+                        if (canCalculateDiff && oldResult.Unit.Length > 0)
                         {
-                            var canCalculateDiff = effectiveHeader is not "Error"
-                                                   && oldResult.Value is not "-" and not "N/A" and not "NA"
-                                                   && newResult.Value is not "-" and not "N/A" and not "NA"
-                                                   && decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0;
-
-                            decimal newMultiplier = 1;
-                            const decimal conversionFromBigger = 0.0009765625M;
-
-                            if (canCalculateDiff && oldResult.Unit.Length > 0)
+                            switch (oldResult.Unit, newResult.Unit)
                             {
-                                switch (oldResult.Unit, newResult.Unit)
-                                {
-                                    case var (oldUnit, newUnit) when oldUnit == newUnit:
-                                        // ok
-                                        break;
-                                    case ("MB", "KB"):
-                                    case ("KB", "B"):
-                                    case ("GB", "MB"):
-                                    case ("s" , "ms"):
-                                    case ("ms", "us"):
-                                    case ("ms", "μs"):
-                                    case ("μs", "ns"):
-                                        newMultiplier = conversionFromBigger;
-                                        break;
-                                    case ("MB", "B"):
-                                        newMultiplier = conversionFromBigger * conversionFromBigger;
-                                        break;
-                                    case ("ms", "s"):
-                                    case ("μs", "ms"):
-                                    case ("KB", "MB"):
-                                        newMultiplier = 1 / conversionFromBigger;
-                                        break;
-                                    default:
-                                        canCalculateDiff = false;
-                                        break;
-                                }
+                                case var (oldUnit, newUnit) when oldUnit == newUnit:
+                                    // ok
+                                    break;
+                                case ("MB", "KB"):
+                                case ("KB", "B"):
+                                case ("GB", "MB"):
+                                case ("s" , "ms"):
+                                case ("ms", "us"):
+                                case ("ms", "μs"):
+                                case ("μs", "ns"):
+                                    newMultiplier = conversionFromBigger;
+                                    break;
+                                case ("MB", "B"):
+                                    newMultiplier = conversionFromBigger * conversionFromBigger;
+                                    break;
+                                case ("ms", "s"):
+                                case ("μs", "ms"):
+                                case ("KB", "MB"):
+                                    newMultiplier = 1 / conversionFromBigger;
+                                    break;
+                                default:
+                                    canCalculateDiff = false;
+                                    break;
                             }
+                        }
 
-                            if (canCalculateDiff)
-                            {
-                                var old = decimal.Parse(oldResult.Value, CultureInfo.InvariantCulture);
-                                var newValue = decimal.Parse(newResult.Value, CultureInfo.InvariantCulture);
+                        if (canCalculateDiff)
+                        {
+                            var old = decimal.Parse(oldResult.Value, CultureInfo.InvariantCulture);
+                            var newValue = decimal.Parse(newResult.Value, CultureInfo.InvariantCulture);
 
-                                var diff = (newValue * newMultiplier / old - 1) * 100;
-                                value += $" ({diff:+#;-#;0}%)";
-                            }
-                            else if ((oldResult.Value, newResult.Value) is ("-", _) or (_, "-") or ("0.0000", "0.0000"))
+                            var diff = (newValue * newMultiplier / old - 1) * 100;
+                            value += $" ({diff:+#;-#;0}%)";
+                        }
+                        else if ((oldResult.Value, newResult.Value) is ("-", _) or (_, "-") or ("0.0000", "0.0000"))
+                        {
+                            // OK
+                        }
+                        else if (decimal.TryParse(oldResult.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out _)
+                                 && newResult.Value is "-")
+                        {
+                            value += " (-100%)";
+                        }
+                        else
+                        {
+                            if (effectiveHeader is not "Error" && oldString != value)
                             {
-                                // OK
-                            }
-                            else if (decimal.TryParse(oldResult.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out _)
-                                     && newResult.Value is "-")
-                            {
-                                value += " (-100%)";
-                            }
-                            else
-                            {
-                                if (effectiveHeader is not "Error" && oldString != value)
-                                {
-                                    Console.Error.WriteLine("Cannot calculate diff for " + oldString + " vs " + value);
-                                }
+                                Console.Error.WriteLine("Cannot calculate diff for " + oldString + " vs " + value);
                             }
                         }
                     }
-
-                    writer.Write(" **" + value + "** |");
                 }
-            }
 
-            writer.WriteLine();
+                writer.Write(" **" + value + "** |");
+            }
         }
+
+        writer.WriteLine();
     }
 
     writer.WriteLine();
