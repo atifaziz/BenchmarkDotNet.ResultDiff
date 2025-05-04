@@ -68,12 +68,10 @@ foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
                       .Aggregate((acc, row) => from e in acc.Zip(row) select Math.Max(e.First, e.Second))
                       .ToImmutableArray();
 
-    foreach (var (j, row) in table.Index())
+    foreach (var (j, row) in table.Index(1))
     {
-        if (j is 1)
-            writer.WriteLine(string.Join("|", row.Zip(widths, (c, w) => c.PadLeft(w, '-'))));
-        else
-            writer.WriteLine(string.Join("|", row.Zip(widths, (c, w) => c.PadRight(w))));
+        writer.WriteLine(row.Zip(widths, (c, w) => j is 2 ? c.PadLeft(w, '-') : c.PadRight(w))
+                            .ToDelimitedString("|"));
     }
 }
 
@@ -120,12 +118,12 @@ IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRo
         (oldRow, newRow) = rowPair.Current;
 
         writer.Write("| Old |");
-        foreach (var (hi, (_, (_, oldIndex))) in effectiveHeaders.Index())
+        foreach (var (hi, (name, (_, oldIndex))) in effectiveHeaders.Index())
         {
             var value = "-";
             if (oldIndex is { } someOldIndex)
                 oldColumnValues[hi] = value = oldRow[someOldIndex];
-            writer.Write($" {value} |");
+            writer.Write($" {(name is "Type" or "Method" ? $"`{value}`" : value)} |");
         }
 
         yield return writer.WriteLine();
