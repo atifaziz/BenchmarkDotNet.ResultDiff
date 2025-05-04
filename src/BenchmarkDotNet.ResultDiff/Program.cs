@@ -4,8 +4,11 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Dsv;
 using MoreLinq;
+
+#pragma warning disable CA2201 // Do not raise reserved exception types
 
 // Reads BenchmarkDotNet CSV format results from two directories and creates a rudimentary diff view.
 
@@ -58,14 +61,28 @@ foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
     var oldRows = File.ReadLines(oldFile.FullName).ParseCsv();
     var newRows = File.ReadLines(newFile.FullName).ParseCsv();
 
-    using var rowPair = oldRows.Zip(newRows, (oldRow1, newRow1) => (Old: oldRow1, New: newRow1))
-                               .GetEnumerator();
+    var table = FormatTable(oldRows.Zip(newRows)).Select(line => line.Split('|'))
+                                                 .ToList();
+
+    var widths = table.Select(row => from c in row select c.Length)
+                      .Aggregate((acc, row) => from e in acc.Zip(row) select Math.Max(e.First, e.Second))
+                      .ToImmutableArray();
+
+    foreach (var (j, row) in table.Index())
+    {
+        if (j is 1)
+            writer.WriteLine(string.Join("|", row.Zip(widths, (c, w) => c.PadLeft(w, '-'))));
+        else
+            writer.WriteLine(string.Join("|", row.Zip(widths, (c, w) => c.PadRight(w))));
+    }
+}
+
+IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRows)
+{
+    using var rowPair = pairedRows.GetEnumerator();
 
     if (!rowPair.MoveNext())
-    {
-        Console.Error.WriteLine("Incomplete data in one of the two files.");
-        return 1;
-    }
+        throw new("Incomplete data in one of the two files.");
 
     var (oldRow, newRow) = rowPair.Current;
 
@@ -78,9 +95,11 @@ foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
             where c.Index is (not null, _) or (_, not null)
             select c);
 
-    writer.WriteLine($"| Diff | {string.Join(" | ", from h in effectiveHeaders select h.Name)} |");
+    yield return $"| Diff | {string.Join(" | ", from h in effectiveHeaders select h.Name)} |";
 
-    writer.Write("|------- ");
+    var writer = new LineWriter();
+
+    writer.Write("|-------");
     foreach (var (name, _) in effectiveHeaders)
     {
         writer.Write("|-------");
@@ -90,7 +109,7 @@ foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
         }
     }
 
-    writer.WriteLine("|");
+    yield return writer.WriteLine("|");
 
     var oldColumnValues = new string?[effectiveHeaders.Length];
 
@@ -109,7 +128,7 @@ foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
             writer.Write($" {value} |");
         }
 
-        writer.WriteLine();
+        yield return writer.WriteLine();
 
         writer.Write("| **New** |");
         foreach (var (hi, (name, (_, newIndex))) in effectiveHeaders.Index())
@@ -200,7 +219,7 @@ foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
             }
         }
 
-        writer.WriteLine();
+        yield return writer.WriteLine();
     }
 }
 
@@ -254,4 +273,19 @@ static DirectoryInfo FindDirectory(string path)
     }
 
     return dir;
+}
+
+sealed class LineWriter
+{
+    readonly StringBuilder sb = new();
+
+    public void Write(string s) => this.sb.Append(s);
+
+    public string WriteLine(string s = "")
+    {
+        Write(s);
+        var result = this.sb.ToString();
+        _ = this.sb.Clear();
+        return result;
+    }
 }
