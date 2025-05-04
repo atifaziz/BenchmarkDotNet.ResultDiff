@@ -4,7 +4,6 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using Dsv;
 using MoreLinq;
 
@@ -61,21 +60,29 @@ foreach (var (i, (oldFile, newFile)) in CreateFilePairs(oldDir, newDir).Index())
     var oldRows = File.ReadLines(oldFile.FullName).ParseCsv();
     var newRows = File.ReadLines(newFile.FullName).ParseCsv();
 
-    var table = FormatTable(oldRows.Zip(newRows)).Select(line => line.Split('|'))
-                                                 .ToList();
+    var table = FormatTable(oldRows.Zip(newRows)).ToList();
 
-    var widths = table.Select(row => from c in row select c.Length)
+    var widths = table.Select(row => from c in row select c.Text.Length)
                       .Aggregate((acc, row) => from e in acc.Zip(row) select Math.Max(e.First, e.Second))
                       .ToImmutableArray();
 
-    foreach (var (j, row) in table.Index(1))
+    var dashes = new string('-', widths.Max());
+
+    foreach (var (j, row) in table.Index())
     {
-        writer.WriteLine(row.Zip(widths, (c, w) => j is 2 ? c.PadLeft(w, '-') : c.PadRight(w))
-                            .ToDelimitedString("|"));
+        writer.WriteLine($"| {row.Zip(widths, (c, w) => c.Alignment is Alignment.Right ? c.Text.PadLeft(w) : c.Text.PadRight(w))
+                                 .ToDelimitedString(" | ")} |");
+
+        if (j is 0)
+        {
+            var rs = from c in row select c.Alignment is Alignment.Right ? ':' : ' ';
+            var ds = from w in widths select dashes[..w];
+            writer.WriteLine($"|{ds.Zip(rs, (d, r) => $" {d}{r}").ToDelimitedString("|")}|");
+        }
     }
 }
 
-IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRows)
+IEnumerable<Cell[]> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRows)
 {
     using var rowPair = pairedRows.GetEnumerator();
 
@@ -87,27 +94,22 @@ IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRo
     var effectiveHeaders =
         ImmutableArray.CreateRange(
             from c in columns
-            select (Name: c, Index: (Old: oldRow.FindFirstIndex(c, StringComparison.Ordinal),
-                                     New: newRow.FindFirstIndex(c, StringComparison.Ordinal)))
-            into c
-            where c.Index is (not null, _) or (_, not null)
+            select new
+            {
+                Name      = c,
+                Index     = (Old: oldRow.FindFirstIndex(c, StringComparison.Ordinal),
+                             New: newRow.FindFirstIndex(c, StringComparison.Ordinal)),
+                Alignment = c.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || c is "Allocated" or "Mean"
+                          ? Alignment.Right
+                          : Alignment.Left
+            }
+    into c
+    where c.Index is (not null, _) or (_, not null)
             select c);
 
-    yield return $"| Diff | {string.Join(" | ", from h in effectiveHeaders select h.Name)} |";
-
-    var writer = new LineWriter();
-
-    writer.Write("|-------");
-    foreach (var (name, _) in effectiveHeaders)
-    {
-        writer.Write("|-------");
-        if (name.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || name is "Allocated" or "Mean")
-        {
-            writer.Write(":");
-        }
-    }
-
-    yield return writer.WriteLine("|");
+    yield return MoreEnumerable.Return(new Cell("Diff"))
+                               .Concat(from h in effectiveHeaders select new Cell(h.Name, h.Alignment))
+                               .ToArray();
 
     var oldColumnValues = new string?[effectiveHeaders.Length];
 
@@ -117,27 +119,30 @@ IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRo
 
         (oldRow, newRow) = rowPair.Current;
 
-        writer.Write("| Old |");
-        foreach (var (hi, (name, (_, oldIndex))) in effectiveHeaders.Index())
+        var cells = new Cell[effectiveHeaders.Length + 1];
+        cells[0] = new Cell("Old");
+        foreach (var (hi, h) in effectiveHeaders.Index())
         {
             var value = "-";
-            if (oldIndex is { } someOldIndex)
+            if (h.Index.Old is { } someOldIndex)
                 oldColumnValues[hi] = value = oldRow[someOldIndex];
-            writer.Write($" {(name is "Type" or "Method" ? $"`{value}`" : value)} |");
+            cells[hi + 1] = new(h.Name is "Type" or "Method" ? $"`{value}`" : value, h.Alignment);
         }
 
-        yield return writer.WriteLine();
+        yield return cells;
 
-        writer.Write("| **New** |");
-        foreach (var (hi, (name, (_, newIndex))) in effectiveHeaders.Index())
+        cells = new Cell[effectiveHeaders.Length + 1];
+        cells[0] = new Cell("**New**");
+
+        foreach (var (hi, h) in effectiveHeaders.Index())
         {
-            if (name is "Type" or "Method" or "N" or "FileName")
+            if (h.Name is "Type" or "Method" or "N" or "FileName")
             {
-                writer.Write(" |");
+                cells[hi + 1] = new(string.Empty);
             }
             else
             {
-                var value = newIndex is { } someNewIndex ? newRow[someNewIndex] : "-";
+                var value = h.Index.New is { } someNewIndex ? newRow[someNewIndex] : "-";
 
                 if (oldColumnValues[hi] is { } oldString)
                 {
@@ -148,7 +153,7 @@ IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRo
 
                     if (string.IsNullOrWhiteSpace(oldResult.Unit) == string.IsNullOrWhiteSpace(newResult.Unit))
                     {
-                        var canCalculateDiff = name is not "Error"
+                        var canCalculateDiff = h.Name is not "Error"
                                                && oldResult.Value is not "-" and not "N/A" and not "NA"
                                                && newResult.Value is not "-" and not "N/A" and not "NA"
                                                && decimal.TryParse(oldResult.Value, out var tempOldResult) && tempOldResult != 0;
@@ -205,7 +210,7 @@ IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRo
                         }
                         else
                         {
-                            if (name is not "Error" && oldString != value)
+                            if (h.Name is not "Error" && oldString != value)
                             {
                                 Console.Error.WriteLine("Cannot calculate diff for " + oldString + " vs " + value);
                             }
@@ -213,11 +218,11 @@ IEnumerable<string> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRo
                     }
                 }
 
-                writer.Write(" **" + value + "** |");
+                cells[hi + 1] = new Cell($"**{value}**", h.Alignment);
             }
         }
 
-        yield return writer.WriteLine();
+        yield return cells;
     }
 }
 
@@ -273,17 +278,5 @@ static DirectoryInfo FindDirectory(string path)
     return dir;
 }
 
-sealed class LineWriter
-{
-    readonly StringBuilder sb = new();
-
-    public void Write(string s) => this.sb.Append(s);
-
-    public string WriteLine(string s = "")
-    {
-        Write(s);
-        var result = this.sb.ToString();
-        _ = this.sb.Clear();
-        return result;
-    }
-}
+enum Alignment { Left, Center, Right }
+sealed record Cell(string Text, Alignment Alignment = Alignment.Left);
