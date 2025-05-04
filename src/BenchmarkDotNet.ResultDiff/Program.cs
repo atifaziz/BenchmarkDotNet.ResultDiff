@@ -99,7 +99,7 @@ IEnumerable<Cell[]> FormatTable(IEnumerable<(TextRow Old, TextRow New)> pairedRo
                 Name      = c,
                 Index     = (Old: oldRow.FindFirstIndex(c, StringComparison.Ordinal),
                              New: newRow.FindFirstIndex(c, StringComparison.Ordinal)),
-                Alignment = c.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || c is "Allocated" or "Mean"
+                Alignment = c.IndexOf("Gen ", StringComparison.OrdinalIgnoreCase) > -1 || c is "Allocated" or "Mean" or "Error"
                           ? Alignment.Right
                           : Alignment.Left
             }
