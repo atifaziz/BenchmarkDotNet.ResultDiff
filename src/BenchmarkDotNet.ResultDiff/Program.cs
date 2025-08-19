@@ -5,7 +5,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Dsv;
-using MoreLinq;
+#if !NET9_0_OR_GREATER
+using static MoreLinq.Extensions.IndexExtension;
+#endif
+using static MoreLinq.Extensions.ToDelimitedStringExtension;
+using MoreEnumerable = MoreLinq.MoreEnumerable;
 
 #pragma warning disable CA2201 // Do not raise reserved exception types
 
