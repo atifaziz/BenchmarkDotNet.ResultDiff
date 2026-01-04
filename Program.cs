@@ -1,3 +1,8 @@
+#!/usr/bin/env dotnet
+
+#:package morelinq@4.4.0
+#:package dsv@1.4.0
+
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;

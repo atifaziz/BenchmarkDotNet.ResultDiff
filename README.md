@@ -22,7 +22,7 @@ cd  C:\Sources\BenchmarkDotNet.ResultDiff\src\BenchmarkDotNet.ResultDiff
 `
 
 `
-dotnet run ..\jint\Jint.Benchmark\BenchmarkDotNet.Artifacts_dev ..\jint\Jint.Benchmark\BenchmarkDotNet.Artifacts_my_feature
+dotnet Program.cs ..\jint\Jint.Benchmark\BenchmarkDotNet.Artifacts_dev ..\jint\Jint.Benchmark\BenchmarkDotNet.Artifacts_my_feature
 `
 
 `
